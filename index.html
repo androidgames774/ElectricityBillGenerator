@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Electricity Bill Generator</title>
+  <style>
+    body{font-family:Inter,system-ui,Arial;margin:18px;color:#111}
+    h1{font-size:20px;margin-bottom:6px}
+    label{font-weight:600}
+    input[type=text], input[type=number]{padding:6px;border:1px solid #ccc;border-radius:6px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:8px;border:1px solid #e6e6e6;text-align:left}
+    button{padding:8px 12px;border-radius:8px;border:0;background:#2563eb;color:white;cursor:pointer}
+    .muted{color:#666;font-size:13px}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .small{font-size:13px;padding:6px 8px}
+    .btn-ghost{background:#f3f4f6;color:#111}
+    .bill-card{width:700px;padding:18px;border:1px solid #ddd;border-radius:8px;background:white}
+  </style>
+  <!-- html2pdf library (includes html2canvas & jsPDF) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+  <h1>Electricity Bill Generator</h1>
+  <div class="muted">Enter tenants and meter readings. Default energy rate is LKR 34/kWh. Generates a PDF invoice per tenant.</div>
+
+  <div style="margin-top:12px;">
+    <div class="row">
+      <label>Energy rate (LKR/kWh):</label>
+      <input id="energyRate" type="number" value="34" step="0.01" style="width:100px" />
+      <label>Fixed charge (LKR):</label>
+      <input id="fixedCharge" type="number" value="800" style="width:120px" />
+      <label>Admin fee (per invoice LKR):</label>
+      <input id="adminFee" type="number" value="250" style="width:120px" />
+      <label>Split fixed by:</label>
+      <select id="fixedSplitMethod">
+        <option value="equal">Equal</option>
+        <option value="proportional">Proportional to consumption</option>
+      </select>
+    </div>
+
+    <div style="margin-top:10px">
+      <button id="addTenant" class="small">+ Add Tenant</button>
+      <button id="recalc" class="small btn-ghost">Recalculate</button>
+      <button id="genAll" class="small">Generate All PDFs</button>
+    </div>
+  </div>
+
+  <table id="tenantsTable">
+    <thead>
+      <tr>
+        <th>Tenant</th>
+        <th>Previous reading (kWh)</th>
+        <th>Current reading (kWh)</th>
+        <th>Units</th>
+        <th>Energy (LKR)</th>
+        <th>Fixed share (LKR)</th>
+        <th>Admin (LKR)</th>
+        <th>Total (LKR)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+
+  <script>
+    const tbody = document.querySelector('#tenantsTable tbody');
+    const energyRateEl = document.getElementById('energyRate');
+    const fixedChargeEl = document.getElementById('fixedCharge');
+    const adminFeeEl = document.getElementById('adminFee');
+    const fixedSplitMethodEl = document.getElementById('fixedSplitMethod');
+
+    function addTenantRow(name = 'Unit A', prev = 0, curr = 0){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="t-name" type="text" value="${name}" /></td>
+        <td><input class="t-prev" type="number" value="${prev}" /></td>
+        <td><input class="t-curr" type="number" value="${curr}" /></td>
+        <td class="t-units">0</td>
+        <td class="t-energy">0.00</td>
+        <td class="t-fixed">0.00</td>
+        <td class="t-admin">0.00</td>
+        <td class="t-total">0.00</td>
+        <td><button class="generate small">PDF</button> <button class="remove small btn-ghost">Remove</button></td>
+      `;
+      tbody.appendChild(tr);
+
+      tr.querySelector('.t-prev').addEventListener('input', recalc);
+      tr.querySelector('.t-curr').addEventListener('input', recalc);
+      tr.querySelector('.generate').addEventListener('click', () => generatePDFForRow(tr));
+      tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); recalc(); });
+      recalc();
+    }
+
+    document.getElementById('addTenant').addEventListener('click', ()=> addTenantRow('Unit ' + String.fromCharCode(65 + tbody.children.length), 0, 0));
+    document.getElementById('recalc').addEventListener('click', recalc);
+    document.getElementById('genAll').addEventListener('click', generateAllPDFs);
+
+    function recalc(){
+      const rows = Array.from(tbody.children);
+      const energyRate = parseFloat(energyRateEl.value) || 0;
+      const fixedCharge = parseFloat(fixedChargeEl.value) || 0;
+      const adminFee = parseFloat(adminFeeEl.value) || 0;
+
+      // compute units
+      let totalUnits = 0;
+      rows.forEach(r => {
+        const prev = parseFloat(r.querySelector('.t-prev').value) || 0;
+        const curr = parseFloat(r.querySelector('.t-curr').value) || 0;
+        const units = Math.max(0, curr - prev);
+        r.querySelector('.t-units').textContent = units;
+        totalUnits += units;
+      });
+
+      rows.forEach(r => {
+        const units = parseFloat(r.querySelector('.t-units').textContent) || 0;
+        const energy = units * energyRate;
+        r.querySelector('.t-energy').textContent = energy.toFixed(2);
+        let fixedShare = 0;
+        if(fixedSplitMethodEl.value === 'equal'){
+          fixedShare = fixedCharge / Math.max(1, rows.length);
+        } else {
+          fixedShare = totalUnits > 0 ? (units / totalUnits) * fixedCharge : (fixedCharge / Math.max(1, rows.length));
+        }
+        r.querySelector('.t-fixed').textContent = fixedShare.toFixed(2);
+        r.querySelector('.t-admin').textContent = adminFee.toFixed(2);
+        const total = energy + fixedShare + adminFee;
+        r.querySelector('.t-total').textContent = total.toFixed(2);
+      });
+    }
+
+    function generateInvoiceHtml(name, prev, curr, units, energyRate, energyCost, fixedShare, adminFee, total, billingPeriod='01-Aug-2025 to 31-Aug-2025', dueDate='10-Sep-2025'){
+      return `
+      <div class="bill-card" style="font-family:Arial;color:#111">
+        <h2 style="margin:0 0 6px 0">Electricity Bill</h2>
+        <div style="margin-bottom:6px">Billed by: <strong>N. Yaparathne</strong></div>
+        <div style="margin-bottom:10px">Tenant: <strong>${escapeHtml(name)}</strong></div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr><td>Billing period</td><td>${billingPeriod}</td></tr>
+          <tr><td>Previous reading (kWh)</td><td>${prev}</td></tr>
+          <tr><td>Current reading (kWh)</td><td>${curr}</td></tr>
+          <tr><td>Units consumed (kWh)</td><td>${units}</td></tr>
+          <tr><td>Energy rate (LKR/kWh)</td><td>${energyRate}</td></tr>
+          <tr><td>Energy charge (LKR)</td><td>${energyCost.toFixed(2)}</td></tr>
+          <tr><td>Fixed charge share (LKR)</td><td>${fixedShare.toFixed(2)}</td></tr>
+          <tr><td>Admin fee (LKR)</td><td>${adminFee.toFixed(2)}</td></tr>
+          <tr style="font-weight:700"><td>Total due (LKR)</td><td>${total.toFixed(2)}</td></tr>
+          <tr><td>Due date</td><td>${dueDate}</td></tr>
+        </table>
+        <div style="margin-top:12px;font-size:13px">Payment details: Bank: [Your Bank] | A/C: [Your Account] | Ref: ${escapeHtml(name)}-ELEC</div>
+      </div>
+      `;
+    }
+
+    function escapeHtml(text){
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function generatePDFForRow(tr){
+      const name = tr.querySelector('.t-name').value || 'Tenant';
+      const prev = parseFloat(tr.querySelector('.t-prev').value) || 0;
+      const curr = parseFloat(tr.querySelector('.t-curr').value) || 0;
+      const units = Math.max(0, curr - prev);
+      const energyRate = parseFloat(energyRateEl.value) || 0;
+      const energyCost = units * energyRate;
+      const fixedShare = parseFloat(tr.querySelector('.t-fixed').textContent) || 0;
+      const adminFee = parseFloat(tr.querySelector('.t-admin').textContent) || 0;
+      const total = energyCost + fixedShare + adminFee;
+
+      const invoiceHtml = generateInvoiceHtml(name, prev, curr, units, energyRate, energyCost, fixedShare, adminFee, total);
+
+      // create container
+      const container = document.createElement('div');
+      container.style.padding = '12px';
+      container.innerHTML = invoiceHtml;
+      document.body.appendChild(container);
+
+      // generate pdf using html2pdf
+      const opt = { margin: 10, filename: `${name.replace(/\s+/g,'_')}_electricity_invoice.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+      html2pdf().from(container).set(opt).save().finally(()=> container.remove());
+    }
+
+    async function generateAllPDFs(){
+      const rows = Array.from(tbody.children);
+      for(const r of rows){
+        await new Promise(resolve => {
+          generatePDFForRow(r);
+          // wait a bit for download to start
+          setTimeout(resolve, 1400);
+        });
+      }
+    }
+
+    // seed sample rows
+    addTenantRow('Unit A', 5400, 6600);
+    addTenantRow('Unit B', 3200, 4300);
+    addTenantRow('Unit C', 2100, 3000);
+    addTenantRow('Unit D', 1200, 1800);
+  </script>
+</body>
+</html>
