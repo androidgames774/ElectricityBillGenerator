@@ -9,9 +9,9 @@
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     table, th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background-color: #f2f2f2; }
-    .preview { margin-top: 20px; padding: 20px; border: 1px solid #aaa; }
     .btn { margin: 5px; padding: 8px 12px; background: #007bff; color: #fff; border: none; cursor: pointer; border-radius: 4px; }
     .btn:hover { background: #0056b3; }
+    .preview { margin-top: 20px; padding: 20px; border: 1px solid #aaa; }
   </style>
 </head>
 <body>
@@ -24,15 +24,12 @@
   <label>Fixed Charge (LKR): <input type="number" id="fixed" value="800"></label><br><br>
   <label>Admin Fee (LKR): <input type="number" id="admin" value="250"></label><br><br>
 
-  <button class="btn" onclick="calculateBill()">Preview Bill</button>
-  <button class="btn" onclick="downloadPDF()">Download PDF</button>
+  <button class="btn" onclick="generateBill()">Generate Bill</button>
 
   <div id="preview" class="preview" style="display:none;"></div>
 
   <script>
-    let lastBill = null;
-
-    function calculateBill() {
+    function generateBill() {
       const tenant = document.getElementById('tenantName').value;
       const prev = parseFloat(document.getElementById('prevReading').value) || 0;
       const curr = parseFloat(document.getElementById('currReading').value) || 0;
@@ -44,15 +41,14 @@
       const energyCharge = units * rate;
       const total = energyCharge + fixed + admin;
 
-      lastBill = { tenant, prev, curr, units, rate, energyCharge, fixed, admin, total };
-
+      // Preview bill with calculation breakdown
       const html = `
         <h2>Bill Preview</h2>
         <p><strong>Tenant:</strong> ${tenant}</p>
         <p><strong>Previous Reading:</strong> ${prev} kWh</p>
         <p><strong>Current Reading:</strong> ${curr} kWh</p>
         <p><strong>Units Consumed:</strong> ${units} kWh</p>
-        <p><strong>Energy Rate:</strong> LKR ${rate} / kWh</p>
+        <p><strong>Energy Rate:</strong> LKR ${rate}/kWh</p>
         <p><strong>Energy Charge:</strong> LKR ${energyCharge.toFixed(2)}</p>
         <p><strong>Fixed Charge:</strong> LKR ${fixed.toFixed(2)}</p>
         <p><strong>Admin Fee:</strong> LKR ${admin.toFixed(2)}</p>
@@ -62,14 +58,8 @@
       const previewDiv = document.getElementById('preview');
       previewDiv.innerHTML = html;
       previewDiv.style.display = 'block';
-    }
 
-    function downloadPDF() {
-      if (!lastBill) {
-        alert("Please preview the bill first.");
-        return;
-      }
-
+      // Generate PDF as before
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
 
@@ -77,17 +67,17 @@
       doc.text("Electricity Bill", 20, 20);
 
       doc.setFontSize(12);
-      doc.text(`Tenant: ${lastBill.tenant}`, 20, 30);
-      doc.text(`Previous Reading: ${lastBill.prev} kWh`, 20, 40);
-      doc.text(`Current Reading: ${lastBill.curr} kWh`, 20, 50);
-      doc.text(`Units Consumed: ${lastBill.units} kWh`, 20, 60);
-      doc.text(`Energy Rate: LKR ${lastBill.rate} / kWh`, 20, 70);
-      doc.text(`Energy Charge: LKR ${lastBill.energyCharge.toFixed(2)}`, 20, 80);
-      doc.text(`Fixed Charge: LKR ${lastBill.fixed.toFixed(2)}`, 20, 90);
-      doc.text(`Admin Fee: LKR ${lastBill.admin.toFixed(2)}`, 20, 100);
-      doc.text(`Total: LKR ${lastBill.total.toFixed(2)}`, 20, 120);
+      doc.text(`Tenant: ${tenant}`, 20, 30);
+      doc.text(`Previous Reading: ${prev} kWh`, 20, 40);
+      doc.text(`Current Reading: ${curr} kWh`, 20, 50);
+      doc.text(`Units Consumed: ${units} kWh`, 20, 60);
+      doc.text(`Energy Rate: LKR ${rate}/kWh`, 20, 70);
+      doc.text(`Energy Charge: LKR ${energyCharge.toFixed(2)}`, 20, 80);
+      doc.text(`Fixed Charge: LKR ${fixed.toFixed(2)}`, 20, 90);
+      doc.text(`Admin Fee: LKR ${admin.toFixed(2)}`, 20, 100);
+      doc.text(`Total: LKR ${total.toFixed(2)}`, 20, 120);
 
-      doc.save(`${lastBill.tenant}_Bill.pdf`);
+      doc.save(`${tenant}_Bill.pdf`);
     }
   </script>
 </body>
